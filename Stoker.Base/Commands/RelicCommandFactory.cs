@@ -3,8 +3,8 @@ using HarmonyLib;
 using Stoker.Base.Builder;
 using Stoker.Base.Extension;
 using Stoker.Base.Interfaces;
+using System.Reflection;
 using TrainworksReloaded.Core;
-using TrainworksReloaded.Core.Enum;
 using TrainworksReloaded.Core.Interfaces;
 
 namespace Stoker.Base.Commands;
@@ -18,12 +18,27 @@ public class RelicCommandFactory
             .WithDescription("Manage relics")
             .WithSubCommand("add")
                 .WithDescription("Add a relic to the deck")
-                .WithArgument<string>("name")
+                .WithSimpleNameArg()
                     .WithDescription("The name of the relic to add")
-                    .WithSuggestions(() => [.. Railend.GetContainer().GetInstance<IRegister<RelicData>>().GetAllIdentifiers(RegisterIdentifierType.ReadableID).Select(c => c.ToString())])
+                    .WithSuggestions(() =>
+                    {
+                        Type type = typeof(CheatManager);
+                        FieldInfo field = type.GetField("allGameData", BindingFlags.NonPublic | BindingFlags.Static);
+
+                        if (field != null)
+                        {
+                            AllGameData? allGameData = field.GetValue(null) as AllGameData;
+                            if (allGameData != null)
+                            {
+                                return [.. allGameData.GetAllCollectableRelicData().Select(s => s.Cheat_GetNameEnglish())];
+                            }
+                        }
+                        return [];
+                    })
                     .WithParser((xs) => xs)
                     .Parent()
-                .SetHandler((args) => { 
+                .SetHandler((args) =>
+                {
                     var arguments = args.Arguments;
                     if (!arguments.ContainsKey("name"))
                         throw new Exception("Missing <name> argument");
@@ -39,12 +54,27 @@ public class RelicCommandFactory
                 .Parent()
             .WithSubCommand("remove")
                 .WithDescription("Remove a relic from the deck")
-                .WithArgument<string>("name")
+                .WithSimpleNameArg()
                     .WithDescription("The name of the relic to remove")
-                    .WithSuggestions(() => [.. Railend.GetContainer().GetInstance<IRegister<RelicData>>().GetAllIdentifiers(RegisterIdentifierType.ReadableID).Select(c => c.ToString())])
+                    .WithSuggestions(() =>
+                    {
+                        Type type = typeof(CheatManager);
+                        FieldInfo field = type.GetField("saveManager", BindingFlags.NonPublic | BindingFlags.Static);
+
+                        if (field != null)
+                        {
+                            SaveManager? saveManager = field.GetValue(null) as SaveManager;
+                            if (saveManager != null)
+                            {
+                                return [.. saveManager.GetAllRelics().Select(s => s.GetSourceRelicData().Cheat_GetNameEnglish())];
+                            }
+                        }
+                        return [];
+                    })
                     .WithParser((xs) => xs)
                     .Parent()
-                .SetHandler((args)   => {
+                .SetHandler((args) =>
+                {
                     var arguments = args.Arguments;
                     if (!arguments.ContainsKey("name"))
                         throw new Exception("Missing <name> argument");
@@ -68,11 +98,12 @@ public class RelicCommandFactory
                     .Parent()
                 .WithOption<int>("page-size")
                     .WithDescription("The number of relics to list per page")
-                    .WithDefaultValue("10")
+                    .WithDefaultValue("50")
                     .WithAliases("ps")
                     .WithParser((xs) => int.Parse(xs))
                     .Parent()
-                .SetHandler((args) => {
+                .SetHandler((args) =>
+                {
                     var options = args.Options;
                     if (!options.ContainsKey("page"))
                         throw new Exception("Missing --page option");
@@ -82,14 +113,26 @@ public class RelicCommandFactory
                         throw new Exception("Invalid --page option");
                     if (options["page-size"] is not int pageSize)
                         throw new Exception("Invalid --page-size option");
-                    var relics = Railend.GetContainer().GetInstance<IRegister<RelicData>>().GetAllIdentifiers(RegisterIdentifierType.ReadableID);
-                    var startIndex = (page - 1) * pageSize;
-                    var endIndex = startIndex + pageSize;
-                    var pageRelics = relics.Skip(startIndex).Take(pageSize);
-                    LoggerLazy.Value.Log("Relics:");
-                    foreach (var relic in pageRelics)
+
+                    Type type = typeof(CheatManager);
+                    FieldInfo field = type.GetField("allGameData", BindingFlags.NonPublic | BindingFlags.Static);
+
+                    if (field != null)
                     {
-                        LoggerLazy.Value.Log($"  {relic}");
+                        AllGameData? allGameData = field.GetValue(null) as AllGameData;
+                        if (allGameData != null)
+                        {
+                            List<CollectableRelicData> relics = allGameData.GetAllCollectableRelicData().ToList();
+                            relics.Sort((a, b) => string.Compare(a.Cheat_GetNameEnglish(), b.Cheat_GetNameEnglish(), StringComparison.OrdinalIgnoreCase));
+                            var startIndex = (page - 1) * pageSize;
+                            var endIndex = startIndex + pageSize;
+                            var pageRelics = relics.Skip(startIndex).Take(pageSize);
+                            LoggerLazy.Value.Log("Relics:");
+                            foreach (var relic in pageRelics)
+                            {
+                                LoggerLazy.Value.Log($"{relic.Cheat_GetNameEnglish()}");
+                            }
+                        }
                     }
                     return Task.CompletedTask;
                 })

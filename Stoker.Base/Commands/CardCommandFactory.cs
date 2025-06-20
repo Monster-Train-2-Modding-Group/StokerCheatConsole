@@ -2,9 +2,8 @@ using HarmonyLib;
 using ShinyShoe.Loading;
 using Stoker.Base.Builder;
 using Stoker.Base.Extension;
-using Stoker.Base.Impl;
 using Stoker.Base.Interfaces;
-using TrainworksReloaded.Base;
+using System.Reflection;
 using TrainworksReloaded.Core;
 using TrainworksReloaded.Core.Enum;
 using TrainworksReloaded.Core.Interfaces;
@@ -21,9 +20,23 @@ namespace Stoker.Base.Commands
                 .WithDescription("Manage cards")
                 .WithSubCommand("add")
                     .WithDescription("Add a card to the deck")
-                    .WithArgument<string>("name")
+                    .WithSimpleNameArg()
                         .WithDescription("The name of the card to add")
-                        .WithSuggestions(() => [.. Railend.GetContainer().GetInstance<IRegister<CardData>>().GetAllIdentifiers(RegisterIdentifierType.ReadableID).Select(c => c.ToString())])
+                        .WithSuggestions(() =>
+                        {
+                            Type type = typeof(CheatManager);
+                            FieldInfo field = type.GetField("allGameData", BindingFlags.NonPublic | BindingFlags.Static);
+
+                            if (field != null)
+                            {
+                                AllGameData? allGameData = field.GetValue(null) as AllGameData;
+                                if (allGameData != null)
+                                {
+                                    return [.. allGameData.GetAllCardData().Select(s => s.Cheat_GetNameEnglish())];
+                                }
+                            }
+                            return [];
+                        })
                         .WithParser((xs) => xs)
                         .Parent()
                     .SetHandler((args) =>
@@ -90,9 +103,23 @@ namespace Stoker.Base.Commands
                     .Parent()
                 .WithSubCommand("remove")
                     .WithDescription("Remove a card from the deck")
-                    .WithArgument<string>("name")
+                    .WithSimpleNameArg()
                         .WithDescription("The name of the card to remove")
-                        .WithSuggestions(() => [.. Railend.GetContainer().GetInstance<IRegister<CardData>>().GetAllIdentifiers(RegisterIdentifierType.ReadableID).Select(c => c.ToString())])
+                        .WithSuggestions(() =>
+                        {
+                            Type type = typeof(CheatManager);
+                            FieldInfo field = type.GetField("saveManager", BindingFlags.NonPublic | BindingFlags.Static);
+
+                            if (field != null)
+                            {
+                                SaveManager? saveManager = field.GetValue(null) as SaveManager;
+                                if (saveManager != null)
+                                {
+                                    return [.. saveManager.GetDeckState().Select(s => s.GetTitleKey().LocalizeEnglish(true, null))];
+                                }
+                            }
+                            return [];
+                        })
                         .WithParser((xs) => xs)
                         .Parent()
                     .SetHandler((args) =>
@@ -120,7 +147,7 @@ namespace Stoker.Base.Commands
                         .Parent()
                     .WithOption<int>("page-size")
                         .WithDescription("The number of cards to list per page")
-                        .WithDefaultValue("10")
+                        .WithDefaultValue("50")
                         .WithAliases("ps")
                         .WithParser((xs) => int.Parse(xs))
                         .Parent()
@@ -135,15 +162,30 @@ namespace Stoker.Base.Commands
                             throw new Exception("Invalid --page option");
                         if (options["page-size"] is not int pageSize)
                             throw new Exception("Invalid --page-size option");
-                        var cards = Railend.GetContainer().GetInstance<IRegister<CardData>>().GetAllIdentifiers(RegisterIdentifierType.ReadableID);
-                        var startIndex = (page - 1) * pageSize;
-                        var endIndex = startIndex + pageSize;
-                        var pageCards = cards.Skip(startIndex).Take(pageSize);
-                        LoggerLazy.Value.Log("Cards:");
-                        foreach (var card in pageCards)
+
+
+                        Type type = typeof(CheatManager);
+                        FieldInfo field = type.GetField("allGameData", BindingFlags.NonPublic | BindingFlags.Static);
+
+                        if (field != null)
                         {
-                            LoggerLazy.Value.Log($"  {card}");
+                            AllGameData? allGameData = field.GetValue(null) as AllGameData;
+                            if (allGameData != null)
+                            {
+                                List<CardData> cards = allGameData.GetAllCardData().ToList();
+                                cards.FindAll(c => c.IsUnitAbility()).ForEach(c => cards.Remove(c)); // Remove unit abilities
+                                cards.Sort((x, y) => string.Compare(x.Cheat_GetNameEnglish(), y.Cheat_GetNameEnglish(), StringComparison.OrdinalIgnoreCase));
+                                var startIndex = (page - 1) * pageSize;
+                                var endIndex = startIndex + pageSize;
+                                var pageCards = cards.Skip(startIndex).Take(pageSize);
+                                LoggerLazy.Value.Log("Cards:");
+                                foreach (var card in pageCards)
+                                {
+                                    LoggerLazy.Value.Log($"{card.Cheat_GetNameEnglish()}");
+                                }
+                            }
                         }
+
                         return Task.CompletedTask;
                     })
                     .UseHelpMiddleware()
